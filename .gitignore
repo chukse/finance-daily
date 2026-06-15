@@ -1,0 +1,12 @@
+# Secrets — NEVER commit
+.env
+
+# Local environment
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime-only files (the .db itself IS committed as seed data)
+data/finance.db-wal
+data/finance.db-shm
+data/logs/

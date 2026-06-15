@@ -1,0 +1,62 @@
+# ============================================================
+# Finance Daily — your configuration. Edit freely.
+# ============================================================
+
+# Tickers you want tracked closely (prices, % moves, key stats).
+watchlist:
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - GOOGL
+  - TSLA
+  - SPY
+  - QQQ
+  - BTC-USD
+  - ETH-USD
+
+# Broad-market / macro instruments for the "what happened today" picture.
+# (symbol: label)
+macro:
+  "^GSPC": "S&P 500"
+  "^IXIC": "Nasdaq Composite"
+  "^DJI": "Dow Jones"
+  "^RUT": "Russell 2000"
+  "^VIX": "Volatility (VIX)"
+  "^TNX": "10Y Treasury Yield"
+  "DX-Y.NYB": "US Dollar Index"
+  "CL=F": "Crude Oil (WTI)"
+  "GC=F": "Gold"
+  "BTC-USD": "Bitcoin"
+
+# News RSS feeds (no API key needed). Add/remove freely.
+news_feeds:
+  - name: "Yahoo Finance"
+    url: "https://finance.yahoo.com/news/rssindex"
+  - name: "CNBC Top News"
+    url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+  - name: "CNBC Markets"
+    url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"
+  - name: "MarketWatch Top Stories"
+    url: "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+  - name: "MarketWatch Markets"
+    url: "https://feeds.content.dowjones.io/public/rss/mw_marketpulse"
+  - name: "Reuters Business"
+    url: "https://news.google.com/rss/search?q=when:1d+site:reuters.com+markets+OR+economy+OR+stocks&hl=en-US&gl=US&ceid=US:en"
+  - name: "WSJ Markets"
+    url: "https://news.google.com/rss/search?q=when:1d+site:wsj.com+markets+OR+stocks&hl=en-US&gl=US&ceid=US:en"
+  - name: "Federal Reserve Press"
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+
+# Summarization
+summary:
+  # Claude model for the daily narrative. Sonnet = great quality / low cost.
+  model: "claude-sonnet-4-6"
+  # Max news headlines fed to the model (keeps cost predictable).
+  max_headlines: 60
+  # If no ANTHROPIC_API_KEY is found, fall back to a templated summary.
+  fallback_if_no_key: true
+
+# Storage
+db_path: "data/finance.db"
+digests_dir: "data/digests"

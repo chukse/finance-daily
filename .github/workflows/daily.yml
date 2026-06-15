@@ -1,0 +1,50 @@
+name: Daily market brief
+
+on:
+  schedule:
+    # 11:30 UTC, Mon–Sat (~6:30 AM ET in winter, 7:30 AM ET in summer)
+    - cron: "30 11 * * 1-6"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write          # allow the job to commit the refreshed data back
+
+concurrency:
+  group: daily-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the daily pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m finance_daily.pipeline
+          # Flush WAL so the committed .db is complete
+          python -c "import sqlite3; c=sqlite3.connect('data/finance.db'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+
+      - name: Commit & push refreshed data
+        run: |
+          git config user.name "finance-daily-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/finance.db data/digests
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Daily brief: $(date -u +%Y-%m-%d)"
+            git push
+          fi

@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import html
 import json
+from datetime import datetime, timezone
 
 import markdown as md
 import pandas as pd
 import streamlit as st
+import yfinance as yf
 
 from finance_daily import db, search
 from finance_daily.config import load_config, db_path
@@ -141,6 +143,34 @@ def render_brief(summary_md: str):
     st.markdown(f'<div class="brief">{body}</div>', unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=300, show_spinner="Fetching live prices…")
+def live_quotes(symbols: tuple) -> dict:
+    """Current quotes via one batched yfinance download. Cached 5 min."""
+    out = {s: {"price": None, "change_pct": None} for s in symbols}
+    if not symbols:
+        return out
+    try:
+        data = yf.download(list(symbols), period="5d", interval="1d",
+                           auto_adjust=False, progress=False, threads=True,
+                           group_by="ticker")
+    except Exception:
+        return out
+    multi = len(symbols) > 1
+    for s in symbols:
+        try:
+            df = data[s] if multi else data
+            close = df["Close"].dropna()
+            if close.empty:
+                continue
+            last = float(close.iloc[-1])
+            prev = float(close.iloc[-2]) if len(close) >= 2 else None
+            out[s] = {"price": last,
+                      "change_pct": ((last - prev) / prev * 100) if prev else None}
+        except Exception:
+            continue
+    return out
+
+
 # ---------------------------------------------------------------- hero
 latest = db.latest_digest(conn)
 hero_date = latest["date"] if latest else "—"
@@ -160,8 +190,38 @@ with tab_today:
     if not latest:
         st.info("No data yet. Run the pipeline:  `.venv/bin/python -m finance_daily.pipeline`")
     else:
-        market = json.loads(latest["market_json"])
-        st.markdown(macro_tiles(market), unsafe_allow_html=True)
+        macro_map = cfg.get("macro", {})
+        watch = cfg.get("watchlist", [])
+        all_syms = tuple(list(macro_map.keys()) + [w for w in watch if w not in macro_map])
+
+        c1, c2 = st.columns([1, 5])
+        with c1:
+            if st.button("↻ Refresh"):
+                st.cache_data.clear()
+                st.rerun()
+        q = live_quotes(all_syms)
+        as_of = datetime.now(timezone.utc).strftime("%b %d · %H:%M UTC")
+        with c2:
+            st.caption(f"🟢 LIVE prices · as of {as_of} · auto-refreshes every 5 min")
+
+        # macro tiles — live
+        live_macro = {"macro": [{"label": lbl, "symbol": s, **q.get(s, {})}
+                                for s, lbl in macro_map.items()]}
+        st.markdown(macro_tiles(live_macro), unsafe_allow_html=True)
+
+        # watchlist — live
+        if watch:
+            st.markdown('<div style="color:#6B7A8C;font-family:monospace;font-size:.72rem;'
+                        'letter-spacing:.1em;text-transform:uppercase;margin:6px 0 2px;">'
+                        'Watchlist</div>', unsafe_allow_html=True)
+            live_wl = {"macro": [{"label": w, "symbol": w, **q.get(w, {})} for w in watch]}
+            st.markdown(macro_tiles(live_wl), unsafe_allow_html=True)
+
+        # AI brief — daily morning snapshot
+        st.markdown(f'<div style="color:#6B7A8C;font-family:monospace;font-size:.72rem;'
+                    f'letter-spacing:.1em;text-transform:uppercase;margin:18px 0 4px;">'
+                    f'AI Brief · morning snapshot for {latest["date"]}</div>',
+                    unsafe_allow_html=True)
         render_brief(latest["summary_md"])
 
 # ---------------- Search ----------------

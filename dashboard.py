@@ -54,6 +54,7 @@ html, body, [class*="css"], .stMarkdown, p, span, div, li { font-family: 'DM San
 .tile-value { font-family:'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 700;
               color: var(--txt); margin: 6px 0 2px; }
 .tile-change { font-family:'JetBrains Mono', monospace; font-size: .9rem; font-weight: 700; }
+.spark { display:block; width:100%; height:30px; margin-top:9px; }
 .up   { color: var(--neon); }
 .down { color: var(--red); }
 .flat { color: var(--dim); }
@@ -112,6 +113,32 @@ def _arrow(v):
     return "▲" if v > 0 else ("▼" if v < 0 else "—")
 
 
+def sparkline_svg(series: list, up: bool) -> str:
+    """Tiny inline SVG line chart of an intraday series, colored by direction."""
+    pts = [float(v) for v in series if v is not None]
+    if len(pts) < 2:
+        return ""
+    w, h, pad = 120.0, 30.0, 2.0
+    lo, hi = min(pts), max(pts)
+    rng = (hi - lo) or 1.0
+    n = len(pts)
+    coords = []
+    for i, v in enumerate(pts):
+        x = i / (n - 1) * w
+        y = (h - pad) - (v - lo) / rng * (h - 2 * pad)
+        coords.append(f"{x:.1f},{y:.1f}")
+    line = " ".join(coords)
+    color = "#00E676" if up else "#FF4D5E"
+    fill = "rgba(0,230,118,.10)" if up else "rgba(255,77,94,.10)"
+    area = f"0,{h} {line} {w},{h}"
+    return (
+        f'<svg class="spark" viewBox="0 0 {w:.0f} {h:.0f}" preserveAspectRatio="none">'
+        f'<polygon points="{area}" fill="{fill}" stroke="none"/>'
+        f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="1.6" '
+        f'vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>'
+    )
+
+
 def macro_tiles(market: dict) -> str:
     tiles = []
     for r in market.get("macro", []):
@@ -119,10 +146,11 @@ def macro_tiles(market: dict) -> str:
         price = r.get("price")
         pv = f"{price:,.2f}" if isinstance(price, (int, float)) else "n/a"
         chg = f"{_arrow(cp)} {cp:+.2f}%" if cp is not None else "—"
+        spark = sparkline_svg(r.get("spark", []), (cp or 0) >= 0)
         tiles.append(
             f'<div class="tile"><div class="tile-label">{html.escape(r["label"])}</div>'
             f'<div class="tile-value">{pv}</div>'
-            f'<div class="tile-change {_cls(cp)}">{chg}</div></div>'
+            f'<div class="tile-change {_cls(cp)}">{chg}</div>{spark}</div>'
         )
     return f'<div class="tile-grid">{"".join(tiles)}</div>'
 
@@ -143,31 +171,47 @@ def render_brief(summary_md: str):
     st.markdown(f'<div class="brief">{body}</div>', unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=300, show_spinner="Fetching live prices…")
-def live_quotes(symbols: tuple) -> dict:
-    """Current quotes via one batched yfinance download. Cached 5 min."""
-    out = {s: {"price": None, "change_pct": None} for s in symbols}
-    if not symbols:
-        return out
+def _download(symbols, period, interval):
     try:
-        data = yf.download(list(symbols), period="5d", interval="1d",
+        return yf.download(list(symbols), period=period, interval=interval,
                            auto_adjust=False, progress=False, threads=True,
                            group_by="ticker")
     except Exception:
+        return None
+
+
+@st.cache_data(ttl=300, show_spinner="Fetching live prices…")
+def live_quotes(symbols: tuple) -> dict:
+    """Current quote + intraday sparkline per symbol. Two batched downloads, cached 5 min."""
+    out = {s: {"price": None, "change_pct": None, "spark": []} for s in symbols}
+    if not symbols:
         return out
+    daily = _download(symbols, "5d", "1d")      # price + % vs prior close
+    intra = _download(symbols, "1d", "5m")      # intraday line for the sparkline
     multi = len(symbols) > 1
-    for s in symbols:
+
+    def col(data, s):
+        if data is None:
+            return None
         try:
             df = data[s] if multi else data
-            close = df["Close"].dropna()
-            if close.empty:
-                continue
+            return df["Close"].dropna()
+        except Exception:
+            return None
+
+    for s in symbols:
+        rec = out[s]
+        close = col(daily, s)
+        if close is not None and not close.empty:
             last = float(close.iloc[-1])
             prev = float(close.iloc[-2]) if len(close) >= 2 else None
-            out[s] = {"price": last,
-                      "change_pct": ((last - prev) / prev * 100) if prev else None}
-        except Exception:
-            continue
+            rec["price"] = last
+            rec["change_pct"] = ((last - prev) / prev * 100) if prev else None
+        ic = col(intra, s)
+        series = [float(x) for x in ic.tolist()] if ic is not None and len(ic) >= 2 else []
+        if len(series) < 2 and close is not None:        # fallback to daily closes
+            series = [float(x) for x in close.tolist()]
+        rec["spark"] = series[-72:]
     return out
 
 

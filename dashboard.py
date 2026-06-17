@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 from datetime import datetime, timezone
 
 import markdown as md
@@ -13,8 +14,19 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from finance_daily import db, search
+from finance_daily import db, search, ask
 from finance_daily.config import load_config, db_path
+
+
+def _api_key():
+    """Claude key from env (local .env) or Streamlit secrets (deployed)."""
+    k = os.environ.get("ANTHROPIC_API_KEY")
+    if k:
+        return k
+    try:
+        return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        return None
 
 st.set_page_config(page_title="Finance Daily", page_icon="📈", layout="wide")
 
@@ -225,8 +237,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_today, tab_search, tab_history, tab_ticker = st.tabs(
-    ["  Today's brief  ", "  🔍 Search  ", "  Past briefs  ", "  Ticker history  "]
+tab_today, tab_ask, tab_search, tab_history, tab_ticker = st.tabs(
+    ["  Today's brief  ", "  🤖 Ask  ", "  🔍 Search  ", "  Past briefs  ", "  Ticker history  "]
 )
 
 # ---------------- Today's brief ----------------
@@ -267,6 +279,35 @@ with tab_today:
                     f'AI Brief · morning snapshot for {latest["date"]}</div>',
                     unsafe_allow_html=True)
         render_brief(latest["summary_md"])
+
+# ---------------- Ask (AI Q&A) ----------------
+with tab_ask:
+    st.subheader("Ask the markets")
+    st.caption('Natural-language questions — Claude pulls **live data** to answer. '
+               'e.g. *"which AI chip makers are doing well?"*')
+    question = st.text_input(
+        "Ask", placeholder="which AI chip makers are doing well?",
+        label_visibility="collapsed", key="ask_q",
+    )
+    st.caption("Try: *how is big tech doing today?* · *which energy stocks are up this "
+               "month?* · *what's going on with crypto?* · *is Tesla outperforming the S&P?*")
+    if question:
+        key = _api_key()
+        if not key:
+            st.warning("AI answers aren't enabled on this deployment yet — an "
+                       "`ANTHROPIC_API_KEY` needs to be added to the app's secrets.")
+        else:
+            with st.spinner("Analyzing live market data…"):
+                try:
+                    model = cfg.get("summary", {}).get("model", "claude-sonnet-4-6")
+                    answer, log = ask.answer_question(question, conn, key, model=model)
+                    render_brief(answer)
+                    if log:
+                        with st.expander("🔧 data the AI pulled to answer"):
+                            for step in log:
+                                st.write(f"`{step['tool']}`", step["input"])
+                except Exception as e:
+                    st.error(f"Couldn't answer that one: {e}")
 
 # ---------------- Search ----------------
 with tab_search:

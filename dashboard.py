@@ -251,32 +251,57 @@ with tab_today:
         st.info("No data yet. Run the pipeline:  `.venv/bin/python -m finance_daily.pipeline`")
     else:
         macro_map = cfg.get("macro", {})
-        watch = cfg.get("watchlist", [])
-        all_syms = tuple(list(macro_map.keys()) + [w for w in watch if w not in macro_map])
+        default_watch = cfg.get("watchlist", [])
+        macro_syms = tuple(macro_map.keys())
 
         c1, c2 = st.columns([1, 5])
         with c1:
             if st.button("↻ Refresh"):
                 st.cache_data.clear()
                 st.rerun()
-        q = live_quotes(all_syms)
         as_of = datetime.now(timezone.utc).strftime("%b %d · %H:%M UTC")
         with c2:
             st.caption(f"Live prices · as of {as_of} · auto-refreshes every 5 min")
 
         # macro tiles — live
+        q = live_quotes(macro_syms)
         live_macro = {"macro": [{"label": lbl, "symbol": s, **q.get(s, {})}
                                 for s, lbl in macro_map.items()]}
         st.markdown(macro_tiles(live_macro), unsafe_allow_html=True)
 
-        # watchlist — live
-        if watch:
-            st.markdown('<div class="section-label">Watchlist</div>', unsafe_allow_html=True)
-            live_wl = {"macro": [{"label": w, "symbol": w, **q.get(w, {})} for w in watch]}
+        # watchlist — user-customizable, saved in the page URL (?wl=...)
+        st.markdown('<div class="section-label">Your watchlist · edit anytime</div>',
+                    unsafe_allow_html=True)
+        if "wl_input" not in st.session_state:
+            st.session_state.wl_input = st.query_params.get("wl", ",".join(default_watch))
+        wl_text = st.text_input(
+            "watchlist", key="wl_input", label_visibility="collapsed",
+            placeholder="NVDA, AMD, TSM, AAPL, BTC-USD",
+            help="Comma-separated tickers. Crypto needs -USD (e.g. BTC-USD). "
+                 "Your list is saved in the page URL — bookmark or share it.",
+        )
+        my_syms = []
+        for t in wl_text.split(","):
+            t = t.strip().upper()
+            if t and t not in my_syms:
+                my_syms.append(t)
+        my_syms = my_syms[:30]
+        joined = ",".join(my_syms)
+        if st.query_params.get("wl") != joined:           # keep the URL in sync, no loop
+            st.query_params["wl"] = joined
+        if my_syms:
+            wq = live_quotes(tuple(my_syms))
+            live_wl = {"macro": [{"label": s, "symbol": s, **wq.get(s, {})} for s in my_syms]}
             st.markdown(macro_tiles(live_wl), unsafe_allow_html=True)
+            missing = [s for s in my_syms if wq.get(s, {}).get("price") is None]
+            if missing:
+                st.caption("⚠️ No data for: " + ", ".join(missing)
+                           + " — check the symbol (crypto needs -USD, e.g. SOL-USD).")
+        else:
+            st.caption("Add tickers above to build your watchlist.")
 
-        # AI brief — daily morning snapshot
-        st.markdown(f'<div class="section-label">AI Brief · morning snapshot for '
+        # daily AI brief — morning snapshot
+        st.markdown(f'<div class="section-label">Daily Brief · morning snapshot for '
                     f'{latest["date"]}</div>', unsafe_allow_html=True)
         render_brief(latest["summary_md"])
 

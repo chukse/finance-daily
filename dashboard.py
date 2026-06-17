@@ -8,6 +8,7 @@ import html
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import markdown as md
 import pandas as pd
@@ -28,83 +29,92 @@ def _api_key():
     except Exception:
         return None
 
-st.set_page_config(page_title="Finance Daily", page_icon="📈", layout="wide")
+LOGO = Path(__file__).parent / "assets" / "logo.png"
+
+st.set_page_config(page_title="Your Beauty CFO · Market Brief",
+                   page_icon=str(LOGO) if LOGO.exists() else "💼", layout="wide")
+if LOGO.exists():
+    try:
+        st.logo(str(LOGO))
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------- styling
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600;700&display=swap');
 
-:root { --bg:#0B0F14; --panel:#121821; --line:#1E2730; --txt:#D6E0EA; --dim:#6B7A8C;
-        --neon:#00E676; --red:#FF4D5E; }
+:root { --bg:#F4ECE0; --panel:#FCF9F3; --line:#E8DCC9; --ink:#3E2238; --plum:#5A2A47;
+        --gold:#BFA05A; --rose:#C68A8A; --dim:#8A7B82; --up:#2F7D5B; --down:#B0495A; }
 
 .stApp { background:
-   radial-gradient(900px 500px at 80% -10%, rgba(0,230,118,.06), transparent 60%), var(--bg); }
-html, body, [class*="css"], .stMarkdown, p, span, div, li { font-family: 'DM Sans', sans-serif; }
+   radial-gradient(820px 460px at 85% -8%, rgba(191,160,90,.12), transparent 60%), var(--bg); }
+html, body, [class*="css"], .stMarkdown, p, span, div, li { font-family: 'DM Sans', sans-serif; color: var(--ink); }
 .block-container { padding-top: 2rem; max-width: 1150px; }
 #MainMenu, footer, header { visibility: hidden; }
+h1, h2, h3 { color: var(--plum); }
+.stButton button { border-color: var(--gold); color: var(--plum); font-weight: 600; }
 
 /* ---- hero ---- */
-.hero { border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 22px; }
-.hero h1 { font-family:'JetBrains Mono', monospace; font-weight: 800; font-size: 2.3rem;
-           line-height: 1; margin: 0; letter-spacing: -1px; color: var(--txt); }
-.hero h1 .blink { color: var(--neon); text-shadow: 0 0 12px rgba(0,230,118,.6); }
-.hero .kicker { font-family:'JetBrains Mono', monospace; font-size: .72rem; letter-spacing: .25em;
-                text-transform: uppercase; color: var(--neon); font-weight: 700; margin-bottom: 7px; }
-.hero .sub { color: var(--dim); font-size: .85rem; margin-top: 7px;
-             font-family:'JetBrains Mono', monospace; }
+.hero-rule { border: none; border-top: 1px solid var(--gold); margin: 14px 0 22px; opacity: .55; }
+.kicker { font-size: .72rem; letter-spacing: .26em; text-transform: uppercase; color: var(--gold);
+          font-weight: 700; }
+.wordmark { font-family:'Fraunces', serif; font-weight: 600; font-size: 2.3rem; line-height: 1.05;
+            margin: .15rem 0 0; color: var(--plum); letter-spacing: -.5px; }
+.sub { color: var(--dim); font-size: .85rem; margin-top: 6px; font-style: italic; }
+.section-label { color: var(--gold); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
+                 font-weight: 700; margin: 10px 0 4px; }
 
 /* ---- macro tiles ---- */
 .tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
              gap: 12px; margin: 4px 0 26px; }
-.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-        padding: 14px 16px; transition: transform .12s, box-shadow .12s, border-color .12s; }
-.tile:hover { transform: translateY(-2px); border-color: rgba(0,230,118,.5);
-              box-shadow: 0 0 20px rgba(0,230,118,.10); }
-.tile-label { font-family:'JetBrains Mono', monospace; font-size: .68rem; text-transform: uppercase;
-              letter-spacing: .1em; color: var(--dim); font-weight: 600; }
-.tile-value { font-family:'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 700;
-              color: var(--txt); margin: 6px 0 2px; }
-.tile-change { font-family:'JetBrains Mono', monospace; font-size: .9rem; font-weight: 700; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+        padding: 14px 16px; box-shadow: 0 1px 2px rgba(62,34,56,.04);
+        transition: transform .12s, box-shadow .12s, border-color .12s; }
+.tile:hover { transform: translateY(-2px); border-color: var(--gold);
+              box-shadow: 0 6px 18px rgba(191,160,90,.18); }
+.tile-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
+              color: var(--dim); font-weight: 700; }
+.tile-value { font-family:'Fraunces', serif; font-size: 1.5rem; font-weight: 600;
+              color: var(--plum); margin: 5px 0 2px; font-variant-numeric: tabular-nums; }
+.tile-change { font-size: .9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .spark { display:block; width:100%; height:30px; margin-top:9px; }
-.up   { color: var(--neon); }
-.down { color: var(--red); }
+.up   { color: var(--up); }
+.down { color: var(--down); }
 .flat { color: var(--dim); }
 
 /* ---- brief card ---- */
-.brief { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-         padding: 8px 34px 26px; }
+.brief { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+         padding: 8px 34px 26px; box-shadow: 0 1px 3px rgba(62,34,56,.05); }
 .brief h1 { display:none; }
-.brief h2 { font-family:'JetBrains Mono', monospace; font-weight: 700; font-size: 1.2rem;
-            text-transform: uppercase; letter-spacing:.04em; border-bottom: 1px solid var(--line);
-            padding-bottom: 7px; margin-top: 28px; color: var(--neon); }
-.brief strong { color: var(--neon); }
-.brief table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .9rem;
-               font-family:'JetBrains Mono', monospace; }
-.brief th { background:#0E141B; text-align: left; padding: 8px 10px; font-weight: 700;
-            color: var(--dim); border-bottom: 1px solid var(--line); text-transform:uppercase;
-            font-size:.72rem; letter-spacing:.05em; }
-.brief td { padding: 8px 10px; border-bottom: 1px solid #161D26; color: var(--txt); }
-.brief blockquote { border-left: 3px solid var(--neon); background: rgba(0,230,118,.06);
-                    margin:14px 0; padding: 10px 16px; color:#AEEFCB; border-radius: 0 8px 8px 0; }
+.brief h2 { font-family:'Fraunces', serif; font-weight: 600; font-size: 1.3rem; color: var(--plum);
+            border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 28px; }
+.brief strong { color: var(--plum); }
+.brief table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .92rem; }
+.brief th { background: #F3E9DA; text-align: left; padding: 8px 10px; font-weight: 700;
+            color: var(--plum); border-bottom: 2px solid var(--line); }
+.brief td { padding: 8px 10px; border-bottom: 1px solid #EFE6D6; font-variant-numeric: tabular-nums; }
+.brief blockquote { border-left: 3px solid var(--gold); background: rgba(191,160,90,.08);
+                    margin:14px 0; padding: 10px 16px; color: var(--ink); border-radius: 0 8px 8px 0; }
 .brief hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
 
 /* ---- news cards ---- */
-.news-card { display:block; background: var(--panel); border:1px solid var(--line); border-radius:11px;
+.news-card { display:block; background: var(--panel); border:1px solid var(--line); border-radius:12px;
              padding:13px 16px; margin-bottom:10px; text-decoration:none !important;
              transition: border-color .12s, box-shadow .12s; }
-.news-card:hover { border-color: rgba(0,230,118,.55); box-shadow:0 0 18px rgba(0,230,118,.10); }
-.news-title { color: var(--txt); font-weight:600; font-size:1.0rem; line-height:1.3; }
-.news-meta { color: var(--dim); font-size:.75rem; margin-top:7px; font-family:'JetBrains Mono', monospace; }
-.badge { background: rgba(0,230,118,.15); color: var(--neon); border:1px solid rgba(0,230,118,.4);
-         padding:2px 8px; border-radius:6px; font-size:.66rem; font-weight:700; letter-spacing:.04em; }
-.tkr { background: rgba(255,77,94,.13); color: var(--red); border:1px solid rgba(255,77,94,.35);
-       padding:1px 7px; border-radius:6px; font-weight:700; }
+.news-card:hover { border-color: var(--gold); box-shadow:0 4px 14px rgba(191,160,90,.14); }
+.news-title { color: var(--plum); font-weight:600; font-size:1.0rem; line-height:1.3; }
+.news-meta { color: var(--dim); font-size:.76rem; margin-top:7px; }
+.badge { background: var(--plum); color:#FBF4E9; padding:2px 9px; border-radius:20px; font-size:.66rem;
+         font-weight:700; letter-spacing:.04em; }
+.tkr { background: rgba(198,138,138,.18); color:#A0535F; border:1px solid rgba(198,138,138,.5);
+       padding:1px 8px; border-radius:20px; font-weight:700; }
 
 /* ---- tabs ---- */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--line); }
 .stTabs [data-baseweb="tab"] { font-weight: 600; }
-.stTabs [aria-selected="true"] { color: var(--neon) !important; }
+.stTabs [aria-selected="true"] { color: var(--plum) !important; }
+.stTabs [data-baseweb="tab-highlight"] { background: var(--gold) !important; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -140,8 +150,8 @@ def sparkline_svg(series: list, up: bool) -> str:
         y = (h - pad) - (v - lo) / rng * (h - 2 * pad)
         coords.append(f"{x:.1f},{y:.1f}")
     line = " ".join(coords)
-    color = "#00E676" if up else "#FF4D5E"
-    fill = "rgba(0,230,118,.10)" if up else "rgba(255,77,94,.10)"
+    color = "#2F7D5B" if up else "#B0495A"
+    fill = "rgba(47,125,91,.12)" if up else "rgba(176,73,90,.12)"
     area = f"0,{h} {line} {w},{h}"
     return (
         f'<svg class="spark" viewBox="0 0 {w:.0f} {h:.0f}" preserveAspectRatio="none">'
@@ -230,12 +240,18 @@ def live_quotes(symbols: tuple) -> dict:
 # ---------------------------------------------------------------- hero
 latest = db.latest_digest(conn)
 hero_date = latest["date"] if latest else "—"
-st.markdown(
-    f'<div class="hero"><div class="kicker">Finance Daily · Market Terminal</div>'
-    f'<h1>📈 Finance Daily<span class="blink">_</span></h1>'
-    f'<div class="sub">// self-updating financial briefing &nbsp;·&nbsp; latest: {hero_date}</div></div>',
-    unsafe_allow_html=True,
-)
+hc1, hc2 = st.columns([1, 5], vertical_alignment="center")
+with hc1:
+    if LOGO.exists():
+        st.image(str(LOGO), width=118)
+with hc2:
+    st.markdown(
+        f'<div class="kicker">Your Beauty CFO · Financial Leadership</div>'
+        f'<div class="wordmark">Daily Market Brief</div>'
+        f'<div class="sub">Self-updating financial briefing · latest: {hero_date}</div>',
+        unsafe_allow_html=True,
+    )
+st.markdown('<hr class="hero-rule">', unsafe_allow_html=True)
 
 tab_today, tab_ask, tab_search, tab_history, tab_ticker = st.tabs(
     ["  Today's brief  ", "  🤖 Ask  ", "  🔍 Search  ", "  Past briefs  ", "  Ticker history  "]
@@ -258,7 +274,7 @@ with tab_today:
         q = live_quotes(all_syms)
         as_of = datetime.now(timezone.utc).strftime("%b %d · %H:%M UTC")
         with c2:
-            st.caption(f"🟢 LIVE prices · as of {as_of} · auto-refreshes every 5 min")
+            st.caption(f"Live prices · as of {as_of} · auto-refreshes every 5 min")
 
         # macro tiles — live
         live_macro = {"macro": [{"label": lbl, "symbol": s, **q.get(s, {})}
@@ -267,17 +283,13 @@ with tab_today:
 
         # watchlist — live
         if watch:
-            st.markdown('<div style="color:#6B7A8C;font-family:monospace;font-size:.72rem;'
-                        'letter-spacing:.1em;text-transform:uppercase;margin:6px 0 2px;">'
-                        'Watchlist</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-label">Watchlist</div>', unsafe_allow_html=True)
             live_wl = {"macro": [{"label": w, "symbol": w, **q.get(w, {})} for w in watch]}
             st.markdown(macro_tiles(live_wl), unsafe_allow_html=True)
 
         # AI brief — daily morning snapshot
-        st.markdown(f'<div style="color:#6B7A8C;font-family:monospace;font-size:.72rem;'
-                    f'letter-spacing:.1em;text-transform:uppercase;margin:18px 0 4px;">'
-                    f'AI Brief · morning snapshot for {latest["date"]}</div>',
-                    unsafe_allow_html=True)
+        st.markdown(f'<div class="section-label">AI Brief · morning snapshot for '
+                    f'{latest["date"]}</div>', unsafe_allow_html=True)
         render_brief(latest["summary_md"])
 
 # ---------------- Ask (AI Q&A) ----------------
@@ -346,5 +358,5 @@ with tab_ticker:
         if hist:
             dfh = pd.DataFrame([dict(r) for r in hist]).sort_values("date")
             dfh["date"] = pd.to_datetime(dfh["date"])
-            st.line_chart(dfh.set_index("date")["price"], color="#00E676", height=320)
+            st.line_chart(dfh.set_index("date")["price"], color="#5A2A47", height=320)
             st.dataframe(dfh.set_index("date"), width="stretch")

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,24 +14,13 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from finance_daily import db, search, ask
+from finance_daily import db, search
 from finance_daily.config import load_config, db_path
-
-
-def _api_key():
-    """Claude key from env (local .env) or Streamlit secrets (deployed)."""
-    k = os.environ.get("ANTHROPIC_API_KEY")
-    if k:
-        return k
-    try:
-        return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        return None
 
 LOGO = Path(__file__).parent / "assets" / "logo.png"
 
-st.set_page_config(page_title="Your Beauty CFO · Market Brief",
-                   page_icon=str(LOGO) if LOGO.exists() else "💼", layout="wide")
+st.set_page_config(page_title="Economics · Market Brief",
+                   page_icon=str(LOGO) if LOGO.exists() else "📊", layout="wide")
 if LOGO.exists():
     try:
         st.logo(str(LOGO))
@@ -44,39 +32,39 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600;700&display=swap');
 
-:root { --bg:#F4ECE0; --panel:#FCF9F3; --line:#E8DCC9; --ink:#3E2238; --plum:#5A2A47;
-        --gold:#BFA05A; --rose:#C68A8A; --dim:#8A7B82; --up:#2F7D5B; --down:#B0495A; }
+:root { --bg:#F3EBDD; --panel:#FBF6EC; --line:#E6D8C4; --ink:#2B2622; --terra:#B0653C;
+        --dim:#8A7E70; --up:#4A7C59; --down:#B0493A; }
 
 .stApp { background:
-   radial-gradient(820px 460px at 85% -8%, rgba(191,160,90,.12), transparent 60%), var(--bg); }
+   radial-gradient(820px 460px at 85% -8%, rgba(176,101,60,.10), transparent 60%), var(--bg); }
 html, body, [class*="css"], .stMarkdown, p, span, div, li { font-family: 'DM Sans', sans-serif; color: var(--ink); }
 .block-container { padding-top: 2rem; max-width: 1150px; }
 #MainMenu, footer, header { visibility: hidden; }
-h1, h2, h3 { color: var(--plum); }
-.stButton button { border-color: var(--gold); color: var(--plum); font-weight: 600; }
+h1, h2, h3 { color: var(--ink); }
+.stButton button { border-color: var(--terra); color: var(--terra); font-weight: 600; }
 
 /* ---- hero ---- */
-.hero-rule { border: none; border-top: 1px solid var(--gold); margin: 14px 0 22px; opacity: .55; }
-.kicker { font-size: .72rem; letter-spacing: .26em; text-transform: uppercase; color: var(--gold);
+.hero-rule { border: none; border-top: 1px solid var(--terra); margin: 14px 0 22px; opacity: .5; }
+.kicker { font-size: .72rem; letter-spacing: .3em; text-transform: uppercase; color: var(--terra);
           font-weight: 700; }
 .wordmark { font-family:'Fraunces', serif; font-weight: 600; font-size: 2.3rem; line-height: 1.05;
-            margin: .15rem 0 0; color: var(--plum); letter-spacing: -.5px; }
+            margin: .15rem 0 0; color: var(--ink); letter-spacing: -.5px; }
 .sub { color: var(--dim); font-size: .85rem; margin-top: 6px; font-style: italic; }
-.section-label { color: var(--gold); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
+.section-label { color: var(--terra); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
                  font-weight: 700; margin: 10px 0 4px; }
 
 /* ---- macro tiles ---- */
 .tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
              gap: 12px; margin: 4px 0 26px; }
 .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-        padding: 14px 16px; box-shadow: 0 1px 2px rgba(62,34,56,.04);
+        padding: 14px 16px; box-shadow: 0 1px 2px rgba(43,38,34,.04);
         transition: transform .12s, box-shadow .12s, border-color .12s; }
-.tile:hover { transform: translateY(-2px); border-color: var(--gold);
-              box-shadow: 0 6px 18px rgba(191,160,90,.18); }
+.tile:hover { transform: translateY(-2px); border-color: var(--terra);
+              box-shadow: 0 6px 18px rgba(176,101,60,.18); }
 .tile-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
               color: var(--dim); font-weight: 700; }
 .tile-value { font-family:'Fraunces', serif; font-size: 1.5rem; font-weight: 600;
-              color: var(--plum); margin: 5px 0 2px; font-variant-numeric: tabular-nums; }
+              color: var(--ink); margin: 5px 0 2px; font-variant-numeric: tabular-nums; }
 .tile-change { font-size: .9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .spark { display:block; width:100%; height:30px; margin-top:9px; }
 .up   { color: var(--up); }
@@ -85,16 +73,16 @@ h1, h2, h3 { color: var(--plum); }
 
 /* ---- brief card ---- */
 .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-         padding: 8px 34px 26px; box-shadow: 0 1px 3px rgba(62,34,56,.05); }
+         padding: 8px 34px 26px; box-shadow: 0 1px 3px rgba(43,38,34,.05); }
 .brief h1 { display:none; }
-.brief h2 { font-family:'Fraunces', serif; font-weight: 600; font-size: 1.3rem; color: var(--plum);
+.brief h2 { font-family:'Fraunces', serif; font-weight: 600; font-size: 1.3rem; color: var(--ink);
             border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 28px; }
-.brief strong { color: var(--plum); }
+.brief strong { color: var(--terra); }
 .brief table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .92rem; }
-.brief th { background: #F3E9DA; text-align: left; padding: 8px 10px; font-weight: 700;
-            color: var(--plum); border-bottom: 2px solid var(--line); }
-.brief td { padding: 8px 10px; border-bottom: 1px solid #EFE6D6; font-variant-numeric: tabular-nums; }
-.brief blockquote { border-left: 3px solid var(--gold); background: rgba(191,160,90,.08);
+.brief th { background: #F1E6D3; text-align: left; padding: 8px 10px; font-weight: 700;
+            color: var(--ink); border-bottom: 2px solid var(--line); }
+.brief td { padding: 8px 10px; border-bottom: 1px solid #EFE3CE; font-variant-numeric: tabular-nums; }
+.brief blockquote { border-left: 3px solid var(--terra); background: rgba(176,101,60,.08);
                     margin:14px 0; padding: 10px 16px; color: var(--ink); border-radius: 0 8px 8px 0; }
 .brief hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
 
@@ -102,19 +90,19 @@ h1, h2, h3 { color: var(--plum); }
 .news-card { display:block; background: var(--panel); border:1px solid var(--line); border-radius:12px;
              padding:13px 16px; margin-bottom:10px; text-decoration:none !important;
              transition: border-color .12s, box-shadow .12s; }
-.news-card:hover { border-color: var(--gold); box-shadow:0 4px 14px rgba(191,160,90,.14); }
-.news-title { color: var(--plum); font-weight:600; font-size:1.0rem; line-height:1.3; }
+.news-card:hover { border-color: var(--terra); box-shadow:0 4px 14px rgba(176,101,60,.14); }
+.news-title { color: var(--ink); font-weight:600; font-size:1.0rem; line-height:1.3; }
 .news-meta { color: var(--dim); font-size:.76rem; margin-top:7px; }
-.badge { background: var(--plum); color:#FBF4E9; padding:2px 9px; border-radius:20px; font-size:.66rem;
+.badge { background: var(--terra); color:#FBF4E9; padding:2px 9px; border-radius:20px; font-size:.66rem;
          font-weight:700; letter-spacing:.04em; }
-.tkr { background: rgba(198,138,138,.18); color:#A0535F; border:1px solid rgba(198,138,138,.5);
+.tkr { background: rgba(176,101,60,.14); color:#9A5430; border:1px solid rgba(176,101,60,.4);
        padding:1px 8px; border-radius:20px; font-weight:700; }
 
 /* ---- tabs ---- */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--line); }
 .stTabs [data-baseweb="tab"] { font-weight: 600; }
-.stTabs [aria-selected="true"] { color: var(--plum) !important; }
-.stTabs [data-baseweb="tab-highlight"] { background: var(--gold) !important; }
+.stTabs [aria-selected="true"] { color: var(--terra) !important; }
+.stTabs [data-baseweb="tab-highlight"] { background: var(--terra) !important; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -150,8 +138,8 @@ def sparkline_svg(series: list, up: bool) -> str:
         y = (h - pad) - (v - lo) / rng * (h - 2 * pad)
         coords.append(f"{x:.1f},{y:.1f}")
     line = " ".join(coords)
-    color = "#2F7D5B" if up else "#B0495A"
-    fill = "rgba(47,125,91,.12)" if up else "rgba(176,73,90,.12)"
+    color = "#4A7C59" if up else "#B0493A"
+    fill = "rgba(74,124,89,.12)" if up else "rgba(176,73,58,.12)"
     area = f"0,{h} {line} {w},{h}"
     return (
         f'<svg class="spark" viewBox="0 0 {w:.0f} {h:.0f}" preserveAspectRatio="none">'
@@ -246,15 +234,15 @@ with hc1:
         st.image(str(LOGO), width=118)
 with hc2:
     st.markdown(
-        f'<div class="kicker">Your Beauty CFO · Financial Leadership</div>'
+        f'<div class="kicker">Economics</div>'
         f'<div class="wordmark">Daily Market Brief</div>'
         f'<div class="sub">Self-updating financial briefing · latest: {hero_date}</div>',
         unsafe_allow_html=True,
     )
 st.markdown('<hr class="hero-rule">', unsafe_allow_html=True)
 
-tab_today, tab_ask, tab_search, tab_history, tab_ticker = st.tabs(
-    ["  Today's brief  ", "  🤖 Ask  ", "  🔍 Search  ", "  Past briefs  ", "  Ticker history  "]
+tab_today, tab_search, tab_history, tab_ticker = st.tabs(
+    ["  Today's brief  ", "  🔍 Search  ", "  Past briefs  ", "  Ticker history  "]
 )
 
 # ---------------- Today's brief ----------------
@@ -291,35 +279,6 @@ with tab_today:
         st.markdown(f'<div class="section-label">AI Brief · morning snapshot for '
                     f'{latest["date"]}</div>', unsafe_allow_html=True)
         render_brief(latest["summary_md"])
-
-# ---------------- Ask (AI Q&A) ----------------
-with tab_ask:
-    st.subheader("Ask the markets")
-    st.caption('Natural-language questions — Claude pulls **live data** to answer. '
-               'e.g. *"which AI chip makers are doing well?"*')
-    question = st.text_input(
-        "Ask", placeholder="which AI chip makers are doing well?",
-        label_visibility="collapsed", key="ask_q",
-    )
-    st.caption("Try: *how is big tech doing today?* · *which energy stocks are up this "
-               "month?* · *what's going on with crypto?* · *is Tesla outperforming the S&P?*")
-    if question:
-        key = _api_key()
-        if not key:
-            st.warning("AI answers aren't enabled on this deployment yet — an "
-                       "`ANTHROPIC_API_KEY` needs to be added to the app's secrets.")
-        else:
-            with st.spinner("Analyzing live market data…"):
-                try:
-                    model = cfg.get("summary", {}).get("model", "claude-sonnet-4-6")
-                    answer, log = ask.answer_question(question, conn, key, model=model)
-                    render_brief(answer)
-                    if log:
-                        with st.expander("🔧 data the AI pulled to answer"):
-                            for step in log:
-                                st.write(f"`{step['tool']}`", step["input"])
-                except Exception as e:
-                    st.error(f"Couldn't answer that one: {e}")
 
 # ---------------- Search ----------------
 with tab_search:
@@ -358,5 +317,5 @@ with tab_ticker:
         if hist:
             dfh = pd.DataFrame([dict(r) for r in hist]).sort_values("date")
             dfh["date"] = pd.to_datetime(dfh["date"])
-            st.line_chart(dfh.set_index("date")["price"], color="#5A2A47", height=320)
+            st.line_chart(dfh.set_index("date")["price"], color="#B0653C", height=320)
             st.dataframe(dfh.set_index("date"), width="stretch")
